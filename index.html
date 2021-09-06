@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title></title>
+  <link
+    rel="stylesheet"
+    href="./node_modules/monaco-editor/min/vs/editor/editor.main.css"
+  />
+  <style>
+    #container {
+      width: 800px;
+      height: 600px;
+      border: 1px solid grey;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <script>
+    var require = { paths: { vs: "./node_modules/monaco-editor/min/vs" } };
+  </script>
+
+  <script src="./node_modules/monaco-editor/min/vs/loader.js"></script>
+  <script src="./node_modules/monaco-editor/min/vs/editor/editor.main.nls.js"></script>
+  <script src="./node_modules/monaco-editor/min/vs/editor/editor.main.js"></script>
+
+  <script src="./src/index.js"></script>
+</body>
+</html>
