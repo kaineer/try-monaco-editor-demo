@@ -8,15 +8,34 @@
     href="./node_modules/monaco-editor/min/vs/editor/editor.main.css"
   />
   <style>
-    #container {
+    .editor {
       width: 800px;
       height: 600px;
       border: 1px solid grey;
+
+      float: left;
+    }
+    .editor__left {
+      margin-right: 20px;
+    }
+    .editor__right {
+    }
+    .buttons {
+      clear: both;
+    }
+    .button__merge {
+      font-size: 24px;
     }
   </style>
 </head>
 <body>
-  <div id="container"></div>
+  <div class="editor editor__left"></div>
+  <div class="editor editor__right"></div>
+  <div class="buttons">
+  <button class="button__merge">Merge</button>
+  </div>
+  <script src="./node_modules/diff/dist/diff.js"></script>
+
   <script>
     var require = { paths: { vs: "./node_modules/monaco-editor/min/vs" } };
   </script>

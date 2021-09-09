@@ -1,60 +1,15 @@
 //
-var el = document.querySelector("#container");
-var opts = {
-  value: '',
-  language: 'javascript'
+
+// Diff.diffChars()
+
+const createEditorBySelector = (selector) => {
+  const el = document.querySelector(selector);
+  const opts = { value: '', language: 'javascript' };
+  return monaco.editor.create(el, opts);
 };
 
-var editor = monaco.editor.create(el, opts);
-
-let selection = null;
-
-/**
- * Run fn after interval ms
- *
- * @param {number} interval - time in ms before next fn call
- * @param {function} fn - action to peform
- */
-const delay = async (interval, fn) => {
-  return new Promise((resolve) => {
-    setTimeout(async () => {
-      await fn();
-      resolve();
-    }, interval);
-  });
-};
-
-/**
- * @param {string} value - value to type
- * @param {number} interval - time in ms to pause between chars
- */
-const typeChars = async (value, interval = 100) => {
-  if (value === "") {
-    return;
-  }
-
-  typeOneChar(value[0]);
-  await delay(
-    interval,
-    () => typeChars(value.slice(1), interval)
-  );
-};
-
-const typeOneChar = (char) => {
-  const edit = {
-    range: selection || editor.getSelection(),
-    text: char,
-    forceMoveMarkers: true
-  };
-
-  editor.getModel().pushEditOperations(
-    editor.getSelections(),
-    [edit],
-    () => null
-  );
-
-  selection = editor.getSelection();
-};
+const editor = createEditorBySelector('.editor__left');
+const rightEditor = createEditorBySelector('.editor__right');
 
 const createBlocker = (editor) => {
   const widget = {
@@ -102,54 +57,236 @@ const createBlocker = (editor) => {
   return widget;
 };
 
-editor.focus();
-(async () => {
-  editor.updateOptions({readOnly: true});
+const runDemoInEditor = async (editor, opts = {}, fn) => {
+  if (typeof fn !== "function") {
+    return;
+  }
 
-  const blocker = createBlocker(editor);
-  editor.addOverlayWidget(blocker);
+  const defaultInterval = opts.interval || 100;
 
-  const unsubscribe = editor.onDidBlurEditorText(() => {
+  let selection = null;
+
+  /**
+   * Run fn after interval ms
+   *
+   * @param {number} interval - time in ms before next fn call
+   * @param {function} fn - action to peform
+   */
+  const delay = async (interval, fn) => {
+    return new Promise((resolve) => {
+      setTimeout(async () => {
+        await fn();
+        resolve();
+      }, interval);
+    });
+  };
+
+  /**
+   * Type one character
+   *
+   * @param {string} char - char to output
+   */
+  const typeOneChar = (char) => {
+    const edit = {
+      range: editor.getSelection(),
+      text: char,
+      forceMoveMarkers: true
+    };
+
+    editor.getModel().pushEditOperations(
+      editor.getSelections(),
+      [edit],
+      () => null
+    );
+
+    selection = editor.getSelection();
+  };
+
+  /**
+   * Type all characters from string
+   *
+   * @param {string} value - value to type
+   * @param {number} interval - time in ms to pause between chars
+   */
+  const typeChars = async (value, interval = defaultInterval) => {
+    if (value === "") {
+      return;
+    }
+
+    typeOneChar(value[0]);
+
+    await delay(
+      interval,
+      () => typeChars(value.slice(1), interval)
+    );
+  };
+
+  const runInBlockingContext = async (fn) => {
     editor.focus();
-  });
+    editor.updateOptions({readonly: true});
+    const blocker = createBlocker(editor);
+    editor.addOverlayWidget(blocker);
+    const unsubscribe = editor.onDidBlurEditorText(() => {
+      editor.focus();
+    });
 
-  await typeChars('// * Adding some code\n\n', 50);
-  await typeChars('const answer = 42;');
+    await fn();
 
-  editor.setPosition({lineNumber: 2, column: 1});
-  selection = editor.getSelection();
-
-  await typeChars('// * Removing some code', 50);
-
-  editor.setSelection({
-    startColumn: 1,
-    endColumn: 19,
-    startLineNumber: 3,
-    endLineNumber: 3
-  });
-  selection = {
-    lineNumber: 3,
-    column: 1
+    unsubscribe.dispose();
+    editor.removeOverlayWidget(blocker);
+    editor.updateOptions({readOnly: false});
   };
 
-  typeOneChar('');
+  const getSelectionFromAction = (action, editor) => {
+    if (typeof action.from === 'number') {
+      const { from, to } = action;
+      const model = editor.getModel();
+      const start = model.getPositionAt(from);
+      const end = model.getPositionAt(to);
 
-  await typeChars('// * Setting selection\n\n// Select me!\n');
-  editor.setSelection({
-    startColumn: 1,
-    endColumn: 14,
-    startLineNumber: 5,
-    endLineNumber: 5
-  });
-  selection = {
-    lineNumber: 5,
-    column: 1
+      return {
+        selectionStartLineNumber: start.lineNumber,
+        selectionStartColumn: start.column,
+        positionLineNumber: end.lineNumber,
+        positionColumn: end.column
+      };
+    } else if (typeof action.position === "number") {
+      const { position } = action;
+      const model = editor.getModel();
+      const start = model.getPositionAt(position);
+
+      return {
+        selectionStartLineNumber: start.lineNumber,
+        selectionStartColumn: start.column,
+        positionLineNumber: start.lineNumber,
+        positionColumn: start.column
+      };
+    } else if (action.type === "position") {
+      const { line, column } = action;
+
+      return {
+        selectionStartLineNumber: line,
+        selectionStartColumn: column,
+        positionLineNumber: line,
+        positionColumn: column
+      };
+    } else {
+      const { line, column, endLine, endColumn } = action;
+
+      return {
+        selectionStartLineNumber: line,
+        selectionStartColumn: column,
+        positionLineNumber: endLine,
+        positionColumn: endColumn
+      };
+    }
   };
 
-  unsubscribe.dispose();
+  const createEditorContext = () => {
+    const actions = [];
 
-  editor.removeOverlayWidget(blocker);
+    const context = {
+      at(line, column) {
+        if (typeof column !== "number") {
+          actions.push({type: 'position', position: line});
+        } else {
+          actions.push({type: 'position', line, column});
+        }
+        return context;
+      },
+      insert(text) {
+        actions.push({type: 'insert', text});
+        return context;
+      },
+      remove(line, column, endLine, endColumn) {
+        if (typeof endLine === "undefined") {
+          actions.push({type: 'remove', from: line, to: column});
+        } else {
+          actions.push({type: 'remove', line, column, endLine, endColumn});
+        }
+        return context;
+      },
+      select(line, column, endLine, endColumn) {
+        actions.push({type: 'select', line, column, endLine, endColumn});
+        return context;
+      },
+      run: async (editor) => {
+        for (const action of actions) {
+          const { type } = action;
 
-  editor.updateOptions({readOnly: false});
+          if (type === "position") {
+            const selection = getSelectionFromAction(action, editor);
+            editor.setSelection(selection);
+          } else if (['select', 'remove'].includes(type)) {
+            const selection = getSelectionFromAction(action, editor);
+
+            editor.setSelection(selection); /// ???
+
+            if (type === "remove") {
+              typeOneChar("");
+            }
+          } else if (type === "insert") {
+            const { text } = action;
+            await typeChars(text);
+          }
+        }
+      }
+    };
+
+    return context;
+  };
+
+  const ctx = createEditorContext();
+  fn(ctx);
+  await runInBlockingContext(async () => {
+    await ctx.run(editor);
+  });
+}
+
+(async () => {
+  await runDemoInEditor(editor, {interval: 33}, ({
+    at,
+    insert,
+    remove,
+    select
+  }) => {
+    at(1, 1);
+
+    insert("// Let's do some magic.\n");
+    insert("// Change code in left editor then press «Merge» button\n");
+    insert("// It is down below editors.");
+  });
 })();
 
+const button = document.querySelector('.button__merge');
+
+button.addEventListener('click', (e) => {
+  e.preventDefault();
+  const left = editor.getValue();
+  const right = rightEditor.getValue();
+  const difference = Diff.diffChars(right, left);
+
+  console.log({difference});
+
+  const fn = ({at, insert, remove}) => {
+    let position = 0;
+    at(0, 0);
+    difference.forEach((diff, i) => {
+      if (diff.added) {
+        insert(diff.value);
+        position += diff.count;
+      } else if (diff.removed) {
+        const from = position;
+        const to = position + diff.count;
+        remove(from, to);
+      } else {
+        position += diff.count;
+        if (i < difference.length - 1) {
+          at(position);
+        }
+      }
+    });
+  };
+
+  runDemoInEditor(rightEditor, {interval: 33}, fn);
+});
