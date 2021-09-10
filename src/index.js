@@ -282,8 +282,6 @@ button.addEventListener('click', (e) => {
 
   const selections = editor.getSelections();
 
-  console.log({difference});
-
   const fn = ({at, insert, remove}) => {
     let position = 0;
     at(0, 0);
