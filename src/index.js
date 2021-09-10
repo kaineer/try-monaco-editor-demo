@@ -185,52 +185,68 @@ const runDemoInEditor = async (editor, opts = {}, fn) => {
   const createEditorContext = () => {
     const actions = [];
 
-    const context = {
-      at(line, column) {
-        if (typeof column !== "number") {
-          actions.push({type: 'position', position: line});
-        } else {
-          actions.push({type: 'position', line, column});
-        }
-        return context;
-      },
-      insert(text) {
-        actions.push({type: 'insert', text});
-        return context;
-      },
-      remove(line, column, endLine, endColumn) {
-        if (typeof endLine === "undefined") {
-          actions.push({type: 'remove', from: line, to: column});
-        } else {
-          actions.push({type: 'remove', line, column, endLine, endColumn});
-        }
-        return context;
-      },
-      select(line, column, endLine, endColumn) {
-        actions.push({type: 'select', line, column, endLine, endColumn});
-        return context;
-      },
-      run: async (editor) => {
-        for (const action of actions) {
-          const { type } = action;
-
-          if (type === "position") {
-            const selection = getSelectionFromAction(action, editor);
-            editor.setSelection(selection);
-          } else if (['select', 'remove'].includes(type)) {
-            const selection = getSelectionFromAction(action, editor);
-
-            editor.setSelection(selection); /// ???
-
-            if (type === "remove") {
-              typeOneChar("");
-            }
-          } else if (type === "insert") {
-            const { text } = action;
-            await typeChars(text);
-          }
-        }
+    const at = (line, column) => {
+      if (typeof column !== "number") {
+        actions.push({type: 'position', position: line});
+      } else {
+        actions.push({type: 'position', line, column});
       }
+      return context;
+    };
+
+    const insert = (text) => {
+      actions.push({type: 'insert', text});
+      return context;
+    };
+
+    const remove = (line, column, endLine, endColumn) => {
+      if (typeof endLine === "undefined") {
+        actions.push({type: 'remove', from: line, to: column});
+      } else {
+        actions.push({type: 'remove', line, column, endLine, endColumn});
+      }
+      return context;
+    };
+
+    const select = (line, column, endLine, endColumn) => {
+      actions.push({type: 'select', line, column, endLine, endColumn});
+      return context;
+    };
+
+    const run = async (editor) => {
+      const select = (action) => {
+        const selection = getSelectionFromAction(action, editor);
+        editor.setSelection(selection);
+      };
+
+      const handlers = {
+        position: select,
+        select,
+        remove(action) {
+          select(action);
+          typeOneChar("");
+        },
+        insert: async (action) => {
+          const { text } = action;
+          await typeChars(text);
+        }
+      };
+
+      for (const action of actions) {
+        const { type } = action;
+
+        const handler = handlers[type];
+
+        await handler(action);
+      }
+    };
+
+    const context = {
+      at,
+      insert,
+      remove,
+      select,
+      run
     };
 
     return context;
@@ -244,11 +260,9 @@ const runDemoInEditor = async (editor, opts = {}, fn) => {
 }
 
 (async () => {
-  await runDemoInEditor(editor, {interval: 33}, ({
+  await runDemoInEditor(editor, {interval: 10}, ({
     at,
     insert,
-    remove,
-    select
   }) => {
     at(1, 1);
 
@@ -265,6 +279,8 @@ button.addEventListener('click', (e) => {
   const left = editor.getValue();
   const right = rightEditor.getValue();
   const difference = Diff.diffChars(right, left);
+
+  const selections = editor.getSelections();
 
   console.log({difference});
 
@@ -288,5 +304,25 @@ button.addEventListener('click', (e) => {
     });
   };
 
-  runDemoInEditor(rightEditor, {interval: 33}, fn);
+  const isSelectionEmpty = (selections) => {
+    if (selections.length === 0) {
+      return true;
+    }
+
+    const [s] = selections;
+
+    return (
+      selections.length === 1 &&
+      s.selectionStartColumn === s.positionColumn &&
+      s.selectionStartLineNumber === s.positionLineNumber
+    );
+  };
+
+  (async () => {
+    await runDemoInEditor(rightEditor, {interval: 33}, fn);
+
+    if (!isSelectionEmpty(selections)) {
+      rightEditor.setSelections(selections);
+    }
+  })();
 });
